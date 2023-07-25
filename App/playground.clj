@@ -1,19 +1,9 @@
-(def a (atom 1))
-(def b (atom 2))
+(def flights
+  {["BRU", "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
+   ["PAR LAX"]    [(atom 'flightdata3)  (atom 'flightdata4)]})
 
-(dosync
- (swap! a inc)
- (swap! b inc))
-
-(dosync
- (swap! a inc)
- (swap! b inc))
-
-(print (str "a is " @a " b is " @b))
+(println (str "flights " (flights ["BRU", "LUX"])))
 
 
 
-(let [{name :name
-       location :location
-       description :description} client]
-  (println name location "-" description))
+(println (filter (fn [x] (< x 0)) '(1 2 3)))

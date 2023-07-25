@@ -11,7 +11,11 @@
 
 
 ; encapsulate a singular flight by an atom
-; flights will be a map:  keys : (id,from,to,carrier) values: flightatom (map id,from,to,carrier,pricing)  
+; flights will be a map:  keys are (from,to) values are list of atom(flightdata)
+(comment
+  example {["BRU", "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
+           ["PAR LAX"]    [(atom 'flightdata3)  (atom 'flightdata4)]})
+; where flightdata is [id from to carrier pricing]
 ; This way we make a clear speration between the part that is immutable and the part that is mutable
 ; when a customer wants to book a flight we can easily get a list of candidates
 ; For each candidate flight peek details -> details ok? -> update.
@@ -53,11 +57,11 @@
       ;(println (str "old flight data" oldFlightData))
       ;(println (str "function " update-flight-data))
       ;(println (str "newFlightData " newFlightData))
-      ;if the newdata is not valid (overbooking, negative price, ...) we immediately return false
-      ;if we wouldn't do this the automatic validator function in the flight atom would always fail and we would infinitely recur
-      ;however this is just an extra safety mechanism because the update-flight-data should not return corrupted data in the first place
+      ;if the newdata is not valid (overbooking, negative price, ...) we dont update
+      ;this is just an extra safety mechanism because the update-flight-data function should not return corrupted data in the first place
+      ;but if it would and we wouldn't do this check the validator function of the atom would also fail an we would infinitely recur
       (if (not (validate-flight newFlightData))
-        false
+        [oldFlightData, oldFlightData]
         (if (compare-and-set! flight oldFlightData newFlightData)
           [oldFlightData, newFlightData] ;returning the old an new data so the user can confirm if a change really happened
           (recur @flight))))))
@@ -82,9 +86,6 @@
 ;from, to and id should be already matching with the customer
 ;extra (redundant) safety mechanism: do this check again
 ;returns a boolean that indicates whether the booking succeeded
-
-
-
 (defn book [flight, customer]
   (let [[oldFlightData newFlightData] (update-flight
                                        flight
@@ -96,7 +97,10 @@
                                                            (take-seats (flight-data :pricing) (customer :budget) (customer :seats)))))]
     ;(println (str "oldFlightData" oldFlightData))
     ;(println (str "newFlightData") newFlightData)
-    (not (= oldFlightData newFlightData))))
+    (if (= oldFlightData newFlightData)
+      nil
+      newFlightData)))
+
 ;As a convenience, = also returns true when used to compare Java collections against each other, or against Clojure’s immutable collections, 
 ;if their contents are equal
 
@@ -111,8 +115,6 @@
     (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a with ~a: ~a"
                                        id from to carrier (pricing->str pricing)))))
 
-(defn initialize-flights [initial-flights]
-  'notUsed)
 
 (defn print-flights [flights]
   ;"Print `flights`."
@@ -124,165 +126,11 @@
       (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a: ~a"
                                          id from to (pricing->str pricing))))))
 
-(defn- update-pricing [flight-data factor]
-  ;"Updated pricing of `flight` with `factor`."
-  (update flight-data :pricing
-          #(map (fn [[p a t]] [(* p factor) a t]) %)))
+(defn find-and-book-flight [flights customer]
+  (let [candidate-flights (flights [(customer :from) (customer :to)])]
+    (first (filter (fn [flight] (book flight customer)) candidate-flights))))
 
-(comment
-  (defn start-sale [flights, carrier]
-  ;"Sale: all flights of `carrier` -20%."
-    (log "Start sale for" carrier "!")
-    (swap! flights
-           (fn [old-flights]
-             (vec (map
-                   (fn [flight]
-                     (if (= (:carrier flight) carrier)
-                       (update-pricing flight 0.80)
-                       flight))
-                   old-flights)))))
 
-  (defn end-sale [carrier]
-  ;"End sale: all flights of `carrier` +25% (inverse of -20%)."
-    (log "End sale for" carrier "!")
-    (swap! flights
-           (fn [old-flights]
-             (vec (map
-                   (fn [flight]
-                     (if (= (:carrier flight) carrier)
-                       (update-pricing flight 1.25)
-                       flight))
-                   old-flights)))))
-
-  (defn sort-pricing [pricing]
-  ;"Sort `pricing` from lowest to highest price."
-    (sort-by first pricing))
-
-  (defn filter-pricing-with-n-seats [pricing seats]
-  ;"Get `pricing` for which there are at least `seats` empty seats available."
-    (filter #(>= (second %) seats) pricing))
-
-  (defn lowest-available-price [flight seats]
-    "Returns the lowest price in `flight` for which at least `seats` empty seats
-  are available, or nil if none found."
-    (-> (:pricing flight)                 ; [[price available taken]]
-        (filter-pricing-with-n-seats seats)
-        (sort-pricing)
-        (first)                             ; [price available taken]
-        (first)))                           ; price
-
-  (defn- find-flight [flights customer]
-    "Find a flight in `flights` that is on the route and within the budget of
-  `customer`. If a flight was found, returns {:flight flight :price price},
-  else returns nil."
-    (let [{:keys [_id from to seats budget]}
-          customer
-          flights-and-prices
-          ; flights that are on the route and within budget, and their price
-          (for [f flights
-                :when (and (= (:from f) from) (= (:to f) to))
-                :let [lowest-price (lowest-available-price f seats)]
-                :when (and (some? lowest-price) (<= lowest-price budget))]
-            {:flight f :price lowest-price})
-          cheapest-flight-and-price
-          (first (sort-by :price flights-and-prices))]
-      cheapest-flight-and-price))
-
-  (defn- book [flight price seats]
-    "Updates `flight` to book `seats` at `price`."
-    (update flight :pricing
-            (fn [pricing]
-              (for [[p a t] pricing]
-                (if (= p price)
-                  [p (- a seats) (+ t seats)]
-                  [p a t])))))
-
-  (defn- process-customer [flights customer]
-    "Try to book a flight from `flights` for `customer`, returning the updated
-  flight if found, or nil if no suitable flight was found."
-    (if-let [{:keys [flight price]} (find-flight flights customer)]
-      (let [updated-flight (book flight price (:seats customer))]
-        (log "Customer" (:id customer) "booked" (:seats customer)
-             "seats on flight" (:id updated-flight) "at $" price " (< budget of $"
-             (:budget customer) ").")
-        updated-flight)
-      (do
-        (log "Customer" (:id customer) "did not find a flight.")
-        nil)))
-
-  (def finished-processing?
-    "Set to true once all customers have been processed, so that sales process
-  can end."
-    (atom false))
-
-;idea: process-one-customer -> future and then wait on all futures
-  (defn process-customers [customers]
-    "Process `customers` one by one."
-    (doseq [customer customers]
-      (swap! flights
-             (fn [flights]
-               (if-let [updated-flight (process-customer flights customer)]
-                 (assoc flights (:id updated-flight) updated-flight)
-                 flights))))
-    (reset! finished-processing? true))
-
-  (defn sales-process [carriers time-between-sales time-of-sales]
-    "The sales process starts and ends sales periods, until `finished-processing?`
-  is true."
-    (loop []
-      (let [discounted-carrier (rand-nth carriers)]
-        (Thread/sleep time-between-sales)
-        (start-sale discounted-carrier)
-        (Thread/sleep time-of-sales)
-        (end-sale discounted-carrier))
-      (if (not @finished-processing?)
-        (recur))))
-
-  (defn main [& args]
-    (let [; Parse first command line argument to get input file
-          input-file (first args)
-          [initial-flights customers carriers TIME_BETWEEN_SALES TIME_OF_SALES]
-          (case input-file
-            "simple" [input-simple/flights
-                      input-simple/customers
-                      input-simple/carriers
-                      input-simple/TIME_BETWEEN_SALES
-                      input-simple/TIME_OF_SALES]
-            "random" [input-random/flights
-                      input-random/customers
-                      input-random/carriers
-                      input-random/TIME_BETWEEN_SALES
-                      input-random/TIME_OF_SALES]
-            [input-simple/flights
-             input-simple/customers
-             input-simple/carriers
-             input-simple/TIME_BETWEEN_SALES
-             input-simple/TIME_OF_SALES])]
-    ; Print parameters
-      (println "Input file:" input-file)
-      (println "Number of flights:" (count initial-flights))
-      (println "Number of customers:" (count customers))
-      (println "Number of carriers:" (count carriers))
-      (println "Time between sales:" TIME_BETWEEN_SALES)
-      (println "Time of sales:" TIME_OF_SALES)
-    ; Initialize flights atom
-      (initialize-flights initial-flights)
-    ; Start two threads: one for processing customers, one for sales.
-    ; Print the time to execute the first thread.
-      (let [f1 (future (time (process-customers customers)))
-            f2 (future (sales-process carriers
-                                      TIME_BETWEEN_SALES
-                                      TIME_OF_SALES))]
-      ; Wait until both have finished
-        @f1
-        @f2
-        (await logger))
-    ; Print result, for manual verification and debugging
-      (println "Flights:")
-      (print-flights @flights)))
-
-  (apply main *command-line-args*)
-  (shutdown-agents))
 
 ;--------------------------------------TESTS----------------------------------------
 (defn flight-test []
@@ -304,19 +152,39 @@
         unvalidcustomerB {:id  1 :from "BRU" :to "ATL" :seats 160 :budget 200}] ;te veel stoelen
     (println "BOOKING TEST")
     (println (str "F before booking: " @F))
-    (println (str "valid customer " validcustomer))
-    (println (str "result booking " (book F validcustomer)))
-    (println (str "F after booking: " @F))
+    (println (str "valid customer    " validcustomer))
+    (println (str "result booking    " (book F validcustomer)))
+    (println (str "F after booking:  " @F))
+    (println)
+    (println (str "unvalidcustomerA  " unvalidcustomerA))
+    (println (str "result booking    " (book F unvalidcustomerA)))
+    (println (str "F after booking:  " @F))
+    (println)
+    (println (str "unvalidcustomerB  " unvalidcustomerB))
+    (println (str "result booking    " (book F unvalidcustomerB)))
+    (println (str "F after booking:  " @F))))
 
-    (println (str "unvalidcustomerA " unvalidcustomerA))
-    (println (str "result booking " (book F unvalidcustomerA)))
-    (println (str "F after booking: " @F))
 
-    (println (str "unvalidcustomerB " unvalidcustomerB))
-    (println (str "result booking " (book F unvalidcustomerB)))
-    (println (str "F after booking: " @F))))
+(defn find-flight-test []
+  (let [flights   {["PAR LAX"]    [(atom 'flightdata3) (atom 'flightdata4)]
+                   ["BRU", "ATL"] [(atom {:id 0 :from "BRU" :to "ATL"
+                                          :carrier "Delta"
+                                          :pricing [[600 150 0]
+                                                    [650 50 0]
+                                                    [700 50 0]]})
+                                   (atom {:id 0 :from "BRU" :to "ATL"
+                                          :carrier "Delta"
+                                          :pricing [[600 150 0]
+                                                    [650 50 0]
+                                                    [700 50 0]]})]}
+        customer {:id 0 :from "BRU" :to "ATL"
+                  :seats 5 :budget 600}]
+    (println "FIND-FLIGHT-TEST")
+    (println "result: ")
+    (println @(find-and-book-flight flights customer))))
 
 
 
 ;(flight-test)
-(book-test)
+;(book-test)
+(find-flight-test)
