@@ -21,7 +21,6 @@
 ;for a singular flight we could also use a ref. But then when one flight needs to be updated we'd need to do transaction for only 
 ;one update, the overhead is probably bigger than the swap! of an atom
 
-
 (defn get-available-seats [travel-class]
   (first travel-class))
 (defn get-price [travel-class]
@@ -35,8 +34,8 @@
     (every?
      (fn [travel-class]
        (and
-        (>= (get-available-seats travel-class) 0)
         (>= (get-price           travel-class) 0)
+        (>= (get-available-seats travel-class) 0)
         (>= (get-taken-seats     travel-class) 0)))
      pricing)))
 
@@ -49,25 +48,49 @@
 (defn update-flight [flight update-flight-data]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      ;first check that the new flight data is possible i.e. this flight is bookable
+      ;if the newdata is not valid (overbooking, negative price, ...) we immediately return false
       ;if we wouldn't do this the automatic validator function in the flight atom would always fail and we would infinitely recur
+      ;however this is just an extra safety mechanism because the update-flight-data should not return corrupted data in the first place
       (if (not (validate-flight newFlightData))
         false
         (if (compare-and-set! flight oldFlightData newFlightData)
-          true
+          [oldFlightData, newFlightData] ;returning the old an new data so the user can confirm the update really happened
           (recur @flight))))))
+
+
+
+;I would like to book 5 seats for at most €600 per seat.
+;searches a suitable travel class and returns an updated pricing (will return the same pricing if  a suitable travel class isn't founded)
+(defn take-seats [pricing maxprice seats]
+  (doall  ;might be unnecessary (map on a non-lazy list might not be lazy but idk) TODO find out
+   (map (fn [travel-class]
+          (if (and (< (get-price travel-class) maxprice) (< seats (get-available-seats travel-class)))
+            [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)]
+            travel-class))
+        pricing)))
+
+
+;from, to and id should be already matching with the customer
+;extra (redundant) safety mechanism: do this check again
+;returns a boolean that indicates whether the booking succeeded
+(defn book [flight, customer]
+  (let [[oldFlightData newFlightData] (update-flight
+                                       flight
+                                       (fn [flight-data] (take-seats (flight-data :pricing) (customer :budget) (customer :seats))))]
+    (not (oldFlightData = newFlightData))))
+;As a convenience, = also returns true when used to compare Java collections against each other, or against Clojure’s immutable collections, 
+;if their contents are equal
+
 
 (defn pricing->str [pricing]
   (->> pricing
        (map (fn [[p a t]] (clojure.pprint/cl-format nil "$~3d: ~3d ~3d" p a t)))
        (clojure.string/join ", ")))
 
-
 (defn print-flight-data [flight-data]
   (let [{id :id from :from to :to carrier :carrier pricing :pricing} flight-data]
     (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a with ~a: ~a"
                                        id from to carrier (pricing->str pricing)))))
-
 (defn flight-test []
   (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 145 5] [650 50 0] [700 50 0]])]
     print-flight-data (@F)))
