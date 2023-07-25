@@ -1,0 +1,13 @@
+Input file: simple
+Number of flights: 5
+Number of customers: 14
+Number of carriers: 3
+Time between sales: 50
+Time of sales: 10
+"Elapsed time: 2.967803 msecs"
+Flights:
+Flight   0 from BRU to ATL: $600: 138  12, $650:  50   0, $700:  50   0, $800:  50   0
+Flight   1 from BRU to LON: $300: 150   0, $350:  50   0, $370:  20   0, $380:  30   0
+Flight   2 from BRU to LON: $250:  75  25, $300:  50   0
+Flight   3 from BRU to MAD: $200: 145   5, $250:  50   0, $300: 100   0
+Flight   4 from BRU to MAD: $250: 150   0, $300:  50   0
