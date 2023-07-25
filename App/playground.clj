@@ -13,11 +13,7 @@
 
 
 
-(loop [oldvalue @counter]
-  (let [newvalue (inc oldvalue)]
-    (if (is_okay newvalue)
-      (if (compare-and-set! counter oldvalue newvalue)
-        [oldvalue, newvalue] ;with this we can see whether we have actually update
-        ))))
-
-(defn update-atom-if [Atom, Condition])
+(let [{name :name
+       location :location
+       description :description} client]
+  (println name location "-" description))
