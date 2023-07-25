@@ -121,14 +121,20 @@
 
 
 (defn print-flights [flights]
-  ;"Print `flights`."
-  (letfn [(pricing->str [pricing]
-            (->> pricing
-                 (map (fn [[p a t]] (clojure.pprint/cl-format nil "$~3d: ~3d ~3d" p a t)))
-                 (clojure.string/join ", ")))]
-    (doseq [{:keys [id from to pricing]} (doall (map deref flights))]
-      (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a: ~a"
-                                         id from to (pricing->str pricing))))))
+  (doall (for [asso flights]
+           (doall (for [flight  (vals asso)]
+                    (print-flight-data @flight))))))
+
+(defn print-map-elements [data-map]
+  (doseq [[_ value] data-map]
+    (doseq [v value] (println @v))))
+  ;(doall (map
+  ;        (fn [fls]
+  ;          (map (fn [fl] (print-flight-data @fl))
+  ;               fls)
+  ;          (vals flights))))
+
+
 
 (defn find-and-book-flight [flights customer]
   (let [candidate-flights (flights [(customer :from) (customer :to)])]
@@ -138,50 +144,57 @@
 (defn process-customers [customers flights]
   (pmap (fn [customer] (find-and-book-flight flights customer)) customers))
 
-(comment
-  (defn main [& args]
-    (let [; Parse first command line argument to get input file
-          input-file (first args)
-          [initial-flights customers carriers TIME_BETWEEN_SALES TIME_OF_SALES]
-          (case input-file
-            "simple" [input-simple/flights
-                      input-simple/customers
-                      input-simple/carriers
-                      input-simple/TIME_BETWEEN_SALES
-                      input-simple/TIME_OF_SALES]
-            "random" [input-random/flights
-                      input-random/customers
-                      input-random/carriers
-                      input-random/TIME_BETWEEN_SALES
-                      input-random/TIME_OF_SALES]
-            [input-simple/flights
-             input-simple/customers
-             input-simple/carriers
-             input-simple/TIME_BETWEEN_SALES
-             input-simple/TIME_OF_SALES])]
+;---------------------------------------MAIN-----------------------------------------------
+
+(defn main [& args]
+  (let [; Parse first command line argument to get input file
+        input-file (first args)
+        [initial-flights customers carriers TIME_BETWEEN_SALES TIME_OF_SALES]
+        (case input-file
+          "simple" [input-simple/flights
+                    input-simple/customers
+                    input-simple/carriers
+                    input-simple/TIME_BETWEEN_SALES
+                    input-simple/TIME_OF_SALES]
+          "random" [input-random/flights
+                    input-random/customers
+                    input-random/carriers
+                    input-random/TIME_BETWEEN_SALES
+                    input-random/TIME_OF_SALES]
+          [input-simple/flights
+           input-simple/customers
+           input-simple/carriers
+           input-simple/TIME_BETWEEN_SALES
+           input-simple/TIME_OF_SALES])
+        ;initialize flights map 
+        flights (initialize-flights initial-flights)]
     ; Print parameters
-      (println "!!! YOU ARE IN THE PARALLEL VERSION !!!")
-      (println "Input file:" input-file)
-      (println "Number of flights:" (count initial-flights))
-      (println "Number of customers:" (count customers))
-      (println "Number of carriers:" (count carriers))
-      (println "Time between sales:" TIME_BETWEEN_SALES)
-      (println "Time of sales:" TIME_OF_SALES)
-    ; Initialize flights atom
-      (initialize-flights initial-flights)
+    (println "!!! YOU ARE IN THE PARALLEL VERSION !!!")
+    (println "Input file:" input-file)
+    (println "Number of flights:" (count initial-flights))
+    (println "Number of customers:" (count customers))
+    (println "Number of carriers:" (count carriers))
+    (println "Time between sales:" TIME_BETWEEN_SALES)
+    (println "Time of sales:" TIME_OF_SALES)
+
     ; Start two threads: one for processing customers, one for sales.
     ; Print the time to execute the first thread.
-      (let [f1 (future (time (process-customers customers)))
-            f2 (future (sales-process carriers
-                                      TIME_BETWEEN_SALES
-                                      TIME_OF_SALES))]
+    (let [f1 (future (time (process-customers customers flights)))
+          ;f2 (future (sales-process carriers
+          ;                          TIME_BETWEEN_SALES
+          ;                          TIME_OF_SALES))
+          ]
       ; Wait until both have finished
-        @f1
-        @f2
-        (await logger))
+      @f1
+     ; @f2
+      (await logger))
     ; Print result, for manual verification and debugging
-      (println "Flights:")
-      (print-flights @flights))))
+    (println "Flights:")
+    (print-map-elements flights)))
+
+
+(apply main *command-line-args*)
+(shutdown-agents)
 
 ;--------------------------------------TESTS----------------------------------------
 (defn flight-test []
@@ -248,4 +261,4 @@
 ;(flight-test)
 ;(book-test)
 ;(find-and-book-flight-test)
-(initialize-flights-test)
+;(initialize-flights-test)
