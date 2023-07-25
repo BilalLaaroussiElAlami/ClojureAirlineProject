@@ -12,9 +12,10 @@
 
 ; encapsulate a singular flight by an atom
 ; flights will be a map:  keys are (from,to) values are list of atom(flightdata)
+;example:
 (comment
-  example {["BRU", "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
-           ["PAR LAX"]    [(atom 'flightdata3)  (atom 'flightdata4)]})
+  {["BRU", "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
+   ["PAR LAX"]    [(atom 'flightdata3)  (atom 'flightdata4)]})
 ; where flightdata is [id from to carrier pricing]
 ; This way we make a clear speration between the part that is immutable and the part that is mutable
 ; when a customer wants to book a flight we can easily get a list of candidates
@@ -66,6 +67,9 @@
           [oldFlightData, newFlightData] ;returning the old an new data so the user can confirm if a change really happened
           (recur @flight))))))
 
+
+(defn initialize-flights [flights]
+  (group-by (fn [flight] [(flight :from) (flight :to)]) flights))
 
 
 ;I would like to book 5 seats for at most €600 per seat.
@@ -131,6 +135,53 @@
     (first (filter (fn [flight] (book flight customer)) candidate-flights))))
 
 
+(defn process-customers [customers flights]
+  (pmap (fn [customer] (find-and-book-flight flights customer)) customers))
+
+(comment
+  (defn main [& args]
+    (let [; Parse first command line argument to get input file
+          input-file (first args)
+          [initial-flights customers carriers TIME_BETWEEN_SALES TIME_OF_SALES]
+          (case input-file
+            "simple" [input-simple/flights
+                      input-simple/customers
+                      input-simple/carriers
+                      input-simple/TIME_BETWEEN_SALES
+                      input-simple/TIME_OF_SALES]
+            "random" [input-random/flights
+                      input-random/customers
+                      input-random/carriers
+                      input-random/TIME_BETWEEN_SALES
+                      input-random/TIME_OF_SALES]
+            [input-simple/flights
+             input-simple/customers
+             input-simple/carriers
+             input-simple/TIME_BETWEEN_SALES
+             input-simple/TIME_OF_SALES])]
+    ; Print parameters
+      (println "!!! YOU ARE IN THE PARALLEL VERSION !!!")
+      (println "Input file:" input-file)
+      (println "Number of flights:" (count initial-flights))
+      (println "Number of customers:" (count customers))
+      (println "Number of carriers:" (count carriers))
+      (println "Time between sales:" TIME_BETWEEN_SALES)
+      (println "Time of sales:" TIME_OF_SALES)
+    ; Initialize flights atom
+      (initialize-flights initial-flights)
+    ; Start two threads: one for processing customers, one for sales.
+    ; Print the time to execute the first thread.
+      (let [f1 (future (time (process-customers customers)))
+            f2 (future (sales-process carriers
+                                      TIME_BETWEEN_SALES
+                                      TIME_OF_SALES))]
+      ; Wait until both have finished
+        @f1
+        @f2
+        (await logger))
+    ; Print result, for manual verification and debugging
+      (println "Flights:")
+      (print-flights @flights))))
 
 ;--------------------------------------TESTS----------------------------------------
 (defn flight-test []
@@ -165,7 +216,7 @@
     (println (str "F after booking:  " @F))))
 
 
-(defn find-flight-test []
+(defn find-and-book-flight-test []
   (let [flights   {["PAR LAX"]    [(atom 'flightdata3) (atom 'flightdata4)]
                    ["BRU", "ATL"] [(atom {:id 0 :from "BRU" :to "ATL"
                                           :carrier "Delta"
@@ -177,14 +228,24 @@
                                           :pricing [[600 150 0]
                                                     [650 50 0]
                                                     [700 50 0]]})]}
-        customer {:id 0 :from "BRU" :to "ATL"
-                  :seats 5 :budget 600}]
+        customerFindFlight {:id 0 :from "BRU" :to "ATL"
+                            :seats 5 :budget 600}
+        customerNoFindFlight  {:id 1 :from "BRU" :to "TNG"
+                               :seats 5 :budget 600}]
     (println "FIND-FLIGHT-TEST")
-    (println "result: ")
-    (println @(find-and-book-flight flights customer))))
+    (println "result lucky customer: ")
+    (println @(find-and-book-flight flights customerFindFlight))
+    (println)
+    (println "result unlucky customer: ")
+    (println (find-and-book-flight flights customerNoFindFlight))))
+
+(defn initialize-flights-test []
+  (println "INITIALIZE FLIGHTS TEST ")
+  (println (initialize-flights input-simple/flights)))
 
 
 
 ;(flight-test)
 ;(book-test)
-(find-flight-test)
+;(find-and-book-flight-test)
+(initialize-flights-test)
