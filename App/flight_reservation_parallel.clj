@@ -30,6 +30,7 @@
 
 ;I will call flightData  the map that is contained in the flight atom and I will call flight the flight atom
 (defn validate-flight [flightData]
+  (println (str "validating flightdata: " flightData))
   (let [pricing (flightData :pricing)]
     (every?
      (fn [travel-class]
@@ -40,14 +41,17 @@
      pricing)))
 
 (defn make-flight-data [id from to carrier pricing]
-  {:id  id, :from from, :to to, :carrier carrier, :pricing pricing})
+  {:id  id :from from :to to :carrier carrier :pricing pricing})
 (defn make-flight [id from to carrier pricing]
-  (atom  {:id  id, :from from, :to to, :carrier carrier, :pricing pricing} :validator validate-flight))
+  (atom  {:id  id :from from :to to :carrier carrier :pricing pricing} :validator validate-flight))
 
 ;(tries to) update the flight, returns true if the flight got updated and false if the flight couldn't be updated (already full)
 (defn update-flight [flight update-flight-data]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
+      (println "called update-flight")
+      (println (str "old flight data" oldFlightData))
+      (println (str "newFlightData" newFlightData))
       ;if the newdata is not valid (overbooking, negative price, ...) we immediately return false
       ;if we wouldn't do this the automatic validator function in the flight atom would always fail and we would infinitely recur
       ;however this is just an extra safety mechanism because the update-flight-data should not return corrupted data in the first place
@@ -62,12 +66,15 @@
 ;I would like to book 5 seats for at most €600 per seat.
 ;searches a suitable travel class and returns an updated pricing (will return the same pricing if  a suitable travel class isn't founded)
 (defn take-seats [pricing maxprice seats]
-  (doall  ;might be unnecessary (map on a non-lazy list might not be lazy but idk) TODO find out
-   (map (fn [travel-class]
-          (if (and (< (get-price travel-class) maxprice) (< seats (get-available-seats travel-class)))
-            [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)]
-            travel-class))
-        pricing)))
+  (let [result
+        (doall  ;might be unnecessary (map on a non-lazy list might not be lazy but idk) TODO find out
+         (map (fn [travel-class]
+                (if (and (< (get-price travel-class) maxprice) (< seats (get-available-seats travel-class)))
+                  [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)]
+                  travel-class))
+              pricing))]
+    (println "result" result)
+    result))
 
 
 ;from, to and id should be already matching with the customer
@@ -91,14 +98,9 @@
   (let [{id :id from :from to :to carrier :carrier pricing :pricing} flight-data]
     (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a with ~a: ~a"
                                        id from to carrier (pricing->str pricing)))))
-(defn flight-test []
-  (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 145 5] [650 50 0] [700 50 0]])]
-    print-flight-data (@F)))
 
-
-;probably not going to need this function
 (defn initialize-flights [initial-flights]
-  initial-flights)
+  'notUsed)
 
 (defn print-flights [flights]
   ;"Print `flights`."
@@ -283,4 +285,10 @@
     (println "F after illegal update")
     (print-flight-data @F)))
 
-(flight-test)
+(defn book-test []
+  (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 150 0] [650 50 0] [700 50 0]])
+        customer  {:id  1 :from "BRU" :to "ATL" :seats 5 :budget 550}]
+    (println  (str "result booking" (book F customer)))))
+
+;(flight-test)
+(book-test)
