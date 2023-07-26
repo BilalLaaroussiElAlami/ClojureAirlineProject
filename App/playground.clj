@@ -17,4 +17,5 @@
 
 (print-map-elements my-map)
 
+(when true (print "ok"))
 

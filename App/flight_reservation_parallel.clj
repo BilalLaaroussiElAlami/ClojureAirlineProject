@@ -6,8 +6,8 @@
 
 
 (def logger (agent nil))
-;(defn log [& msgs] (send logger (fn [_] (apply println msgs))))
-(defn log [& msgs] nil)
+(defn log [& msgs] (send logger (fn [_] (apply println msgs))))
+
 
 
 ; encapsulate a singular flight by an atom
@@ -69,7 +69,9 @@
 
 
 (defn initialize-flights [flights]
-  (group-by (fn [flight] [(flight :from) (flight :to)]) flights))
+  (fn [f] (atom f)) (group-by (fn [flight] [(@flight :from) (@flight :to)])
+                              (doall (map (fn [f] (atom f)) flights))))
+
 
 
 ;I would like to book 5 seats for at most €600 per seat.
@@ -116,29 +118,37 @@
 
 (defn print-flight-data [flight-data]
   (let [{id :id from :from to :to carrier :carrier pricing :pricing} flight-data]
-    (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a with ~a: ~a"
-                                       id from to carrier (pricing->str pricing)))))
+    (println (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a: ~a"
+                                       id from to (pricing->str pricing)))))
 
+(defn flight-data->str [flight-data]
+  (let [{id :id from :from to :to carrier :carrier pricing :pricing} flight-data]
+    (clojure.pprint/cl-format nil "Flight ~3d from ~a to ~a: ~a"
+                              id from to (pricing->str pricing))))
+
+(defn flights->str [flights]
+  (loop [fls (reverse (vals flights)) result ""]
+    (let [flightatoms  (first fls)
+          flight-data-s (doall (map deref flightatoms))
+          flight-datas-str  (clojure.string/join "\n"  (doall (map flight-data->str flight-data-s)))
+          new-result (str flight-datas-str "\n" result)]
+      (if (empty? fls)
+        new-result
+        (recur (rest fls) new-result)))))
 
 (defn print-flights [flights]
-  (doall (for [asso flights]
-           (doall (for [flight  (vals asso)]
-                    (print-flight-data @flight))))))
+  (doall (for [fass flights]
+           (doall (for [fat (val fass)]
+                    (print-flight-data @fat))))))
 
-(defn print-map-elements [data-map]
-  (doseq [[_ value] data-map]
-    (doseq [v value] (println @v))))
-  ;(doall (map
-  ;        (fn [fls]
-  ;          (map (fn [fl] (print-flight-data @fl))
-  ;               fls)
-  ;          (vals flights))))
-
-
-
+(def test-process-customers? true)
 (defn find-and-book-flight [flights customer]
-  (let [candidate-flights (flights [(customer :from) (customer :to)])]
-    (first (filter (fn [flight] (book flight customer)) candidate-flights))))
+  (let [candidate-flights (flights [(customer :from) (customer :to)])
+        result-booking (first (filter (fn [flight] (book flight customer)) candidate-flights))]
+    (when test-process-customers?
+      (log (str
+            "state before booking: \n" (flights->str flights) "\n"  "customer: " customer "\n"   "state after booking \n" (flights->str flights))))
+    result-booking))
 
 
 (defn process-customers [customers flights]
@@ -179,18 +189,13 @@
 
     ; Start two threads: one for processing customers, one for sales.
     ; Print the time to execute the first thread.
-    (let [f1 (future (time (process-customers customers flights)))
-          ;f2 (future (sales-process carriers
-          ;                          TIME_BETWEEN_SALES
-          ;                          TIME_OF_SALES))
-          ]
-      ; Wait until both have finished
+    (let [f1 (future (time (process-customers customers flights)))]
       @f1
-     ; @f2
       (await logger))
-    ; Print result, for manual verification and debugging
+
     (println "Flights:")
-    (print-map-elements flights)))
+    (print-flights flights)))
+
 
 
 (apply main *command-line-args*)
@@ -257,8 +262,21 @@
   (println (initialize-flights input-simple/flights)))
 
 
+(defn flights->str-test []
+  (println "FLIGHTS->STR TEST")
+  (let [initial-flights input-simple/flights
+        flights (initialize-flights initial-flights)]
+    (println (flights->str flights))
+    (print-flights flights)))
+
+(defn process-customer-test []
+  (set! test-process-customers? true))
+
+
+
 
 ;(flight-test)
 ;(book-test)
 ;(find-and-book-flight-test)
 ;(initialize-flights-test)
+;(flights->str-test)
