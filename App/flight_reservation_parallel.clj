@@ -68,9 +68,17 @@
           (recur @flight))))))
 
 
+(defn initialize-flights-old [flights]
+  (group-by (fn [flight] [(@flight :from) (@flight :to)])
+            (doall (map (fn [f] (atom f)) flights))))
+
+
+
 (defn initialize-flights [flights]
-  (fn [f] (atom f)) (group-by (fn [flight] [(@flight :from) (@flight :to)])
-                              (doall (map (fn [f] (atom f)) flights))))
+  (let [atoms  (doall (map (fn [f] (atom f)) flights))
+        grouped-by-from-and-to (group-by (fn [flight] [(@flight :from) (@flight :to)]) atoms)
+        grouped-by-carrier     (group-by (fn [flight] (@flight :carrier)) atoms)]
+    [grouped-by-from-and-to grouped-by-carrier]))
 
 
 
@@ -147,7 +155,6 @@
         result-booking (first (filter (fn [flight] (book flight customer)) candidate-flights))]
     result-booking))
 
-
 ;unfortuantely this function doesnt work as expexted
 (defn find-and-book-flight-with-logs [flights customer]
   (locking flights  ;;we lock flights so we can see the state of flights before and after every one booking without another booking changing the state inbetween
@@ -158,8 +165,6 @@
       (log (str "state after booking: \n" (flights->str flights) "\n"))
       result-booking)))
 
-
-
 (def test-process-customers? false)
 (defn process-customers [customers flights]
   (pmap (fn [customer]
@@ -167,6 +172,36 @@
             (find-and-book-flight-with-logs flights customer)
             (find-and-book-flight flights customer)))
         customers))
+
+
+
+(defn- update-pricing [flight factor]
+  "Updated pricing of `flight` with `factor`."
+  (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %)))
+
+;(defn start-sale [flights,carrier]
+;  "Sale: all flights of `carrier` -20%."
+;  (log "Start sale for" carrier "!")
+;  (swap! flights
+;         (fn [old-flights]
+;           (vec (map
+;                 (fn [flight]
+;                   (if (= (:carrier flight) carrier)
+;                     (update-pricing flight 0.80)
+;                     flight))
+;                 old-flights)))))
+
+;(defn end-sale [carrier]
+;  "End sale: all flights of `carrier` +25% (inverse of -20%)."
+;  (log "End sale for" carrier "!")
+;  (swap! flights
+;         (fn [old-flights]
+;           (vec (map
+;                 (fn [flight]
+;                   (if (= (:carrier flight) carrier)
+;                     (update-pricing flight 1.25)
+;                     flight))
+;                 old-flights)))))
 
 ;---------------------------------------MAIN-----------------------------------------------
 
@@ -191,7 +226,7 @@
            input-simple/TIME_BETWEEN_SALES
            input-simple/TIME_OF_SALES])
         ;initialize flights map 
-        flights (initialize-flights initial-flights)]
+        [flightsForBooking, flightsForSale]  (initialize-flights initial-flights)]
     ; Print parameters
     (println "!!! YOU ARE IN THE PARALLEL VERSION !!!")
     (println "Input file:" input-file)
@@ -203,12 +238,12 @@
 
     ; Start two threads: one for processing customers, one for sales.
     ; Print the time to execute the first thread.
-    (let [f1 (future (time (process-customers customers flights)))]
+    (let [f1 (future (time (process-customers customers flightsForBooking)))]
       @f1
       (await logger))
 
     (println "Flights:")
-    (print-flights flights)))
+    (print-flights flightsForBooking)))
 
 
 (apply main *command-line-args*)
@@ -272,8 +307,11 @@
 
 (defn initialize-flights-test []
   (println "INITIALIZE FLIGHTS TEST ")
-  (println (initialize-flights input-simple/flights)))
-
+  (let [[grouped-by-from-and-to grouped-by-carrier] (initialize-flights input-simple/flights)]
+    (println "grouped by from and to:")
+    (println grouped-by-from-and-to)
+    (println "grouped by carrier")
+    (println grouped-by-carrier)))
 
 (defn flights->str-test []
   (println "FLIGHTS->STR TEST")
@@ -283,7 +321,10 @@
     (print-flights flights)))
 
 (defn process-customer-test []
-  (set! test-process-customers? true))
+  "zet test-process-customers? variable handmatig op true")
+
+
+
 
 
 
