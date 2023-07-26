@@ -141,18 +141,32 @@
            (doall (for [fat (val fass)]
                     (print-flight-data @fat))))))
 
-(def test-process-customers? true)
+
 (defn find-and-book-flight [flights customer]
   (let [candidate-flights (flights [(customer :from) (customer :to)])
         result-booking (first (filter (fn [flight] (book flight customer)) candidate-flights))]
-    (when test-process-customers?
-      (log (str
-            "state before booking: \n" (flights->str flights) "\n"  "customer: " customer "\n"   "state after booking \n" (flights->str flights))))
     result-booking))
 
 
+;unfortuantely this function doesnt work as expexted
+(defn find-and-book-flight-with-logs [flights customer]
+  (locking flights  ;;we lock flights so we can see the state of flights before and after every one booking without another booking changing the state inbetween
+    (log (str "state before booking: \n" (flights->str flights) "\n"))
+    (log (str "customer " customer "\n"))
+    (let [candidate-flights (flights [(customer :from) (customer :to)])
+          result-booking (first (filter (fn [flight] (book flight customer)) candidate-flights))]
+      (log (str "state after booking: \n" (flights->str flights) "\n"))
+      result-booking)))
+
+
+
+(def test-process-customers? false)
 (defn process-customers [customers flights]
-  (pmap (fn [customer] (find-and-book-flight flights customer)) customers))
+  (pmap (fn [customer]
+          (if test-process-customers?
+            (find-and-book-flight-with-logs flights customer)
+            (find-and-book-flight flights customer)))
+        customers))
 
 ;---------------------------------------MAIN-----------------------------------------------
 
@@ -195,7 +209,6 @@
 
     (println "Flights:")
     (print-flights flights)))
-
 
 
 (apply main *command-line-args*)
