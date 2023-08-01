@@ -54,11 +54,11 @@
 ;(tries to) update the flight, returns true if the flight got updated and false if the flight couldn't be updated (already full)
 (def reasonBooking "reasonBooking")
 (def reasonSale    "reasonSale")
-(def carriers-undergoing-sale '()) 
+(def carriers-undergoing-sale (atom '()))
 (defn update-flight [flight update-flight-data reason]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      (if  (and (= reason reasonBooking)  (some  (fn[carr](= carr (flight :carrier))) carriers-undergoing-sale))
+      (if  (and (= reason reasonBooking)  (some  (fn[carr](= carr (flight :carrier))) @carriers-undergoing-sale))
         ;this means the flights of the carrier are undergoing a sale, to get atomic/consistent results we recur
         (recur @flight)
         ;if the newdata is not valid (overbooking, negative price, ...) we dont update. extra safety mechanism because update-flight-data function should not return corrupted data in the first place
@@ -168,53 +168,60 @@
       result-booking)))
 
 
+(def finished-processing?
+  "Set to true once all customers have been processed, so that sales process
+  can end."
+  (atom false))
+
 ;TODO bigger granularity !!!!!!
-(def test-process-customers? false)
+
+;example usage: (split '(1 2 3 4 5 6 7 8) 3) returns '((1 2 3)(4 5 6)(7 8))
+(defn split [lst size]
+  (loop [ls lst
+         res '()]
+    (if (empty? ls) 
+      (reverse res)
+      (recur (drop size ls)(cons (take size ls) res))))) 
+
+(defn coarse-pmap [fun args granularity]
+  (let [parts (split args granularity)]
+    (doall 
+     (pmap (fn [part] (doall (map fun part))) parts))))
+
 (defn process-customers [customers flights]
-  (pmap (fn [customer]
-          (if test-process-customers?
-            (find-and-book-flight-with-logs flights customer)
-            (find-and-book-flight flights customer)))
-        customers))
+  ;(doall (pmap
+  ;        (fn [customer] (find-and-book-flight flights customer))
+  ;        customers))
+  (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)
+  (reset! finished-processing? true))
+  
 
+(defn- update-pricing [flight factor]
+  "Updated pricing of `flight` with `factor`."
+  (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %) reasonSale))
 
+(defn sale [flights carrier factor]
+  (reset! carriers-undergoing-sale  (cons carrier @carriers-undergoing-sale))
+  (let [flights-carrier (flights :carrier)]
+    (coarse-pmap (fn [fl] (update-pricing fl factor)) flights-carrier 100))
+  (reset! carriers-undergoing-sale  (filter (fn [c] (not (= c carrier))) @carriers-undergoing-sale)))
 
-;(defn- update-pricing [flight factor]
-;  "Updated pricing of `flight` with `factor`."
-;  (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %) reasonSale))
+(defn start-sale  [flights carrier]
+  (sale flights carrier 0.80))
+(defn end-sale [flights carrier]
+  (sale flights carrier 1.25))
 
-;(defn start-sale [flights carrier]
-;  (set! carriers-undergoing-sale  (cons carrier carriers-undergoing-sale))
-;  (do-start-sale flights carrier)
-;  (set! carriers-undergoing-sale  (filter (fn [c] (not (= c carrier))) carriers-undergoing-sale)))
-
-;(defn do-start-sale [flights carrier ]
-;  (let [flights-carrier  ])
-;  )  
-
-;(defn start-sale [flights,carrier]
-;  "Sale: all flights of `carrier` -20%."
-;  (log "Start sale for" carrier "!")
-;  (swap! flights
-;         (fn [old-flights]
-;           (vec (map
-;                 (fn [flight]
-;                   (if (= (:carrier flight) carrier)
-;                     (update-pricing flight 0.80)
-;                     flight))
-;                 old-flights)))))
-
-;(defn end-sale [carrier]
-;  "End sale: all flights of `carrier` +25% (inverse of -20%)."
-;  (log "End sale for" carrier "!")
-;  (swap! flights
-;         (fn [old-flights]
-;           (vec (map
-;                 (fn [flight]
-;                   (if (= (:carrier flight) carrier)
-;                     (update-pricing flight 1.25)
-;                     flight))
-;                 old-flights)))))
+(defn sales-process [flights carriers time-between-sales time-of-sales]
+  "The sales process starts and ends sales periods, until `finished-processing?`
+  is true."
+  (loop []
+    (let [discounted-carrier (rand-nth carriers)]
+      (Thread/sleep time-between-sales)
+      (start-sale flights discounted-carrier)
+      (Thread/sleep time-of-sales)
+      (end-sale flights discounted-carrier))
+    (if (not @finished-processing?)
+      (recur))))
 
 ;---------------------------------------MAIN-----------------------------------------------
 
@@ -249,10 +256,16 @@
     (println "Time between sales:" TIME_BETWEEN_SALES)
     (println "Time of sales:" TIME_OF_SALES)
 
+  
     ; Start two threads: one for processing customers, one for sales.
     ; Print the time to execute the first thread.
-    (let [f1 (future (time (process-customers customers flightsForBooking)))]
+     (let [f1 (future (time (process-customers customers flightsForBooking)))
+          f2 (future (sales-process flightsForSale carriers
+                                    TIME_BETWEEN_SALES
+                                    TIME_OF_SALES))]
+      ; Wait until both have finished
       @f1
+      @f2
       (await logger))
 
     (println "Flights:")
