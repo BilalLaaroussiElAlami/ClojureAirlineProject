@@ -50,22 +50,23 @@
 (defn make-flight [id from to carrier pricing]
   (atom  {:id  id :from from :to to :carrier carrier :pricing pricing} :validator validate-flight))
 
+
 ;(tries to) update the flight, returns true if the flight got updated and false if the flight couldn't be updated (already full)
-(defn update-flight [flight update-flight-data]
+(def reasonBooking "reasonBooking")
+(def reasonSale    "reasonSale")
+(def carriers-undergoing-sale '()) 
+(defn update-flight [flight update-flight-data reason]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      ;(println "called update-flight")
-      ;(println (str "old flight data" oldFlightData))
-      ;(println (str "function " update-flight-data))
-      ;(println (str "newFlightData " newFlightData))
-      ;if the newdata is not valid (overbooking, negative price, ...) we dont update
-      ;this is just an extra safety mechanism because the update-flight-data function should not return corrupted data in the first place
-      ;but if it would and we wouldn't do this check the validator function of the atom would also fail an we would infinitely recur
-      (if (not (validate-flight newFlightData))
-        [oldFlightData, oldFlightData]
-        (if (compare-and-set! flight oldFlightData newFlightData)
-          [oldFlightData, newFlightData] ;returning the old an new data so the user can confirm if a change really happened
-          (recur @flight))))))
+      (if  (and (= reason reasonBooking)  (some  (fn[carr](= carr (flight :carrier))) carriers-undergoing-sale))
+        ;this means the flights of the carrier are undergoing a sale, to get atomic/consistent results we recur
+        (recur @flight)
+        ;if the newdata is not valid (overbooking, negative price, ...) we dont update. extra safety mechanism because update-flight-data function should not return corrupted data in the first place
+        (if (not (validate-flight newFlightData))
+          [oldFlightData, oldFlightData]
+          (if (compare-and-set! flight oldFlightData newFlightData)
+            [oldFlightData, newFlightData] ;returning the old an new data so the user can confirm if a change really happened
+            (recur @flight)))))))
 
 
 (defn initialize-flights-old [flights]
@@ -108,7 +109,8 @@
                                                            (flight-data :from)
                                                            (flight-data :to)
                                                            (flight-data :carrier)
-                                                           (take-seats (flight-data :pricing) (customer :budget) (customer :seats)))))]
+                                                           (take-seats (flight-data :pricing) (customer :budget) (customer :seats))))
+                                       reasonBooking)]
     ;(println (str "oldFlightData" oldFlightData))
     ;(println (str "newFlightData") newFlightData)
     (if (= oldFlightData newFlightData)
@@ -165,6 +167,8 @@
       (log (str "state after booking: \n" (flights->str flights) "\n"))
       result-booking)))
 
+
+;TODO bigger granularity !!!!!!
 (def test-process-customers? false)
 (defn process-customers [customers flights]
   (pmap (fn [customer]
@@ -175,9 +179,18 @@
 
 
 
-(defn- update-pricing [flight factor]
-  "Updated pricing of `flight` with `factor`."
-  (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %)))
+;(defn- update-pricing [flight factor]
+;  "Updated pricing of `flight` with `factor`."
+;  (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %) reasonSale))
+
+;(defn start-sale [flights carrier]
+;  (set! carriers-undergoing-sale  (cons carrier carriers-undergoing-sale))
+;  (do-start-sale flights carrier)
+;  (set! carriers-undergoing-sale  (filter (fn [c] (not (= c carrier))) carriers-undergoing-sale)))
+
+;(defn do-start-sale [flights carrier ]
+;  (let [flights-carrier  ])
+;  )  
 
 ;(defn start-sale [flights,carrier]
 ;  "Sale: all flights of `carrier` -20%."
@@ -255,10 +268,10 @@
   (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 150 0] [650 50 0] [700 50 0]])]
     (println "original F")
     (print-flight-data @F)
-    (update-flight F (fn [oldfd] (make-flight-data 0, "BRU", "ATL", "Delta", [[0 0 0] [0 0 0] [0 0 0]]))) ;legal
+    (update-flight F (fn [oldfd] (make-flight-data 0, "BRU", "ATL", "Delta", [[0 0 0] [0 0 0] [0 0 0]])) reasonBooking) ;legal
     (println "F afterlegal update")
     (print-flight-data @F)
-    (update-flight F (fn [oldfd] (make-flight-data 0, "BRU", "ATL", "Delta", [[-1 0 0] [0 0 0] [0 0 0]]))) ;illegal nothing should change
+    (update-flight F (fn [oldfd] (make-flight-data 0, "BRU", "ATL", "Delta", [[-1 0 0] [0 0 0] [0 0 0]])) reasonBooking) ;illegal nothing should change
     (println "F after illegal update")
     (print-flight-data @F)))
 
@@ -322,7 +335,6 @@
 
 (defn process-customer-test []
   "zet test-process-customers? variable handmatig op true")
-
 
 
 
