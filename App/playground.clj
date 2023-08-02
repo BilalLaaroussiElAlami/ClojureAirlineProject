@@ -22,17 +22,28 @@
 (defn split [lst size]
   (loop [ls lst
          res '()]
-    (if (empty? ls) 
+    (if (empty? ls)
       (reverse res)
-      (recur (drop size ls)(cons (take size ls) res)))))
+      (recur (drop size ls) (cons (take size ls) res)))))
 
 
 (def ^:dynamic x 3)
 
 (defn main []
-  (binding [x x ]  ;; defaulted to the root binding value
-  (set! x 4))    ;; ok, because in dynamic binding scope
+  (binding [x x]  ;; defaulted to the root binding value
+    (set! x 4))    ;; ok, because in dynamic binding scope
   (println x))
 
-(main)
-(println x)
+
+
+(defn update [lst f]
+  (f))
+
+(defn test []
+  (let [x (atom 1)]
+    (println "x before: ")
+    (println @x)
+    (update '(1 2 3) (fn [] (reset! x 2) '(2 4 6)))
+    (println "x after: ")
+    (println @x)))
+(test)

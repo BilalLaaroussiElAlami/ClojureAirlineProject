@@ -87,15 +87,18 @@
 ;I would like to book 5 seats for at most €600 per seat.
 ;searches a suitable travel class and returns an updated PRICING (will return the same pricing if  a suitable travel class isn't founded)
 (defn take-seats [pricing maxprice seats]
-  (let [result
+  (let [found-suitable-travel-class (atom false)
+        result
         (map (fn [travel-class]
-               (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class)))
-                 [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)]
+               (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class))  (not @found-suitable-travel-class))
+                 (do (reset! found-suitable-travel-class true)
+                     [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)])
                  travel-class))
              pricing)]
     ;(println "result take seats" result)
     ;map is lazy vec will make a vector out of the lazy sequence
     (vec result)))
+
 
 
 ;from, to and id should be already matching with the customer
@@ -278,10 +281,22 @@
     (print-flights flightsForBooking)))
 
 
-;(apply main *command-line-args*)
-;(shutdown-agents)
+(apply main *command-line-args*)
+(shutdown-agents)
 
 ;--------------------------------------TESTS----------------------------------------
+
+(defn test-take-seats []
+  (let [pricing [[300 150 0]
+                 [350  50 0]
+                 [370  20 0]
+                 [380  30 0]]
+        maxprice 400
+        seats 10]
+    (println "TEST take-seats")
+    (println (take-seats pricing maxprice seats))))
+
+
 (defn flight-test []
   (println "testing singular flight")
   (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 150 0] [650 50 0] [700 50 0]])]
@@ -401,5 +416,5 @@
 
 
 ;(run-tests 'flight-reservation-parallel)
-(test-no-overbooking)
-(shutdown-agents)
+;(test-no-overbooking)
+;(shutdown-agents)
