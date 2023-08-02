@@ -15,7 +15,7 @@
 ; flights will be a map:  keys are (from,to) values are list of atom(flightdata)
 ;example:
 (comment
-  {["BRU", "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
+  {["BRU" "LUX"] [(atom 'flightdata1) (atom 'flightdata2)]
    ["PAR LAX"]    [(atom 'flightdata3)  (atom 'flightdata4)]})
 ; where flightdata is [id from to carrier pricing]
 ; This way we make a clear speration between the part that is immutable and the part that is mutable
@@ -36,7 +36,6 @@
 
 ;I will call flightData  the map that is contained in the flight atom and I will call flight the flight atom
 (defn validate-flight [flightData]
-  ;(println (str "validating flightdata: " flightData))
   (let [pricing (flightData :pricing)]
     (every?
      (fn [travel-class]
@@ -89,15 +88,15 @@
 (defn take-seats [pricing maxprice seats]
   (let [found-suitable-travel-class (atom false)
         result
-        (map (fn [travel-class]
-               (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class))  (not @found-suitable-travel-class))
-                 (do (reset! found-suitable-travel-class true)
-                     [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)])
-                 travel-class))
-             pricing)]
-    ;(println "result take seats" result)
-    ;map is lazy vec will make a vector out of the lazy sequence
-    (vec result)))
+        (doall (map (fn [travel-class]
+                      (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class))  (not @found-suitable-travel-class))
+                        (do (reset! found-suitable-travel-class true)
+                            [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)])
+                        travel-class))
+                    pricing))]
+    ;(if (not (= pricing result))
+      ;(log "(take-seats" pricing "\n" maxprice seats "\nresult: " result "\n"))
+    result))
 
 
 
@@ -282,20 +281,21 @@
 
 
 (apply main *command-line-args*)
-(shutdown-agents)
+
 
 ;--------------------------------------TESTS----------------------------------------
 
 (defn test-take-seats []
-  (let [pricing [[300 150 0]
+  (let [pricing [[300 5 10]
                  [350  50 0]
                  [370  20 0]
                  [380  30 0]]
-        maxprice 400
+        maxprice 300
         seats 10]
     (println "TEST take-seats")
     (println (take-seats pricing maxprice seats))))
 
+(test-take-seats)
 
 (defn flight-test []
   (println "testing singular flight")
@@ -390,15 +390,36 @@
 (deftest test-no-overbooking
   (let [[flights,_] (initialize-flights
                      [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
-                       :pricing [[600 5 0]  ;there are only 5 seats at 600 euro
+                       :pricing [[600 10 0]  ;there are only 10 seats at 600 euro
                                  [1000 50 0]
                                  [2000 50 0]]}])
-        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600}) ;100 customers trying to book 5 seats at max 600 euro
+        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600}) ;100 customers trying to book 5 seat at max 600 euro
         count-customers-success (count (filter  (fn [booking] (booking :result-booking)) (process-customers customers flights)))]
-     ;only one customer should be able to do a booking  
-    (is (= 1 count-customers-success))))
+     ;only 2 customer should be able to do a booking  
+    (is (= 2 count-customers-success))))
 
 
+(deftest test-bookings
+  (let [[flights,_] (initialize-flights
+                     [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
+                       :pricing [[500 50 0]
+                                 [1000 50 0]
+                                 [2000 50 0]]}])
+        customers (for [id (range 150)] {:id id :from "BRU" :to "ATL" :seats  1 :budget 3000})
+        count-customers-success (count (filter  (fn [booking] (booking :result-booking)) (process-customers customers flights)))]
+    ;all the customers should be able to book
+    (is (= 150 count-customers-success))))
+
+(deftest test-bookings-2
+  (let [[flights,_] (initialize-flights
+                     [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
+                       :pricing [[500 50 0]
+                                 [1000 50 0]
+                                 [2000 50 0]]}])
+        customers (for [id (range 300)] {:id id :from "BRU" :to "ATL" :seats  1 :budget 3000})
+        count-customers-success (count (filter  (fn [booking] (booking :result-booking)) (process-customers customers flights)))]
+    ;only half the customers should be able to book
+    (is (= 150 count-customers-success))))
 
 
 ;test customer can only book one flight
@@ -415,6 +436,6 @@
 ;(flights->str-test)
 
 
-;(run-tests 'flight-reservation-parallel)
+(run-tests 'flight-reservation-parallel)
 ;(test-no-overbooking)
-;(shutdown-agents)
+(shutdown-agents)
