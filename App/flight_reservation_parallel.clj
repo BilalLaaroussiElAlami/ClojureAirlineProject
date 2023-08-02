@@ -114,8 +114,8 @@
     ;(println (str "oldFlightData" oldFlightData))
     ;(println (str "newFlightData") newFlightData)
     (if (= oldFlightData newFlightData)
-      nil
-      newFlightData)))
+      {:result-booking false :customer customer}
+      {:result-booking true :customer customer})))
 
 ;As a convenience, = also returns true when used to compare Java collections against each other, or against Clojure’s immutable collections, 
 ;if their contents are equal
@@ -154,7 +154,8 @@
 
 (defn find-and-book-flight [flights customer]
   (let [candidate-flights (flights [(customer :from) (customer :to)])
-        result-booking (first (filter (fn [flight] (book flight customer)) candidate-flights))]
+        ;filter is lazy so customer can maximally book one flight!, if filter wouldn't be lazy a customer could book multiple times 
+        result-booking (first (filter (fn [flight] ((book flight customer) :result-booking)) candidate-flights))]
     result-booking))
 
 ;unfortuantely this function doesnt work as expexted
@@ -361,21 +362,27 @@
                        :pricing [[600 5 0]  ;there are only 5 seats at 600 euro
                                  [1000 50 0]
                                  [2000 50 0]]}])
-        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600})]  ;100 customer trying to book 5 seats at max 600 euro
+        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600})]  ;100 customers trying to book 5 seats at max 600 euro
     ;only one customer should be able to do a booking 
     (process-customers customers flights)
     (println "FLIGHTS AFTER PROCESSED CUSTOMERS: ")
     (print-flights flights)))
 
 
+(defn test-sales-isolated [])
+
+;test customer can only book one flight
+;proof
+
+
 
 
 
 ;(flight-test)
-;(book-test)
+(book-test)
 ;(find-and-book-flight-test)
 ;(initialize-flights-test)
 ;(flights->str-test)
 
-(test-no-overbooking)
+;(test-no-overbooking)
 (shutdown-agents)
