@@ -47,3 +47,7 @@
     (println "x after: ")
     (println @x)))
 (test)
+
+(println "---")
+(def x (atom 1))
+(println (@(atom 1)))

@@ -87,16 +87,18 @@
 ;searches a suitable travel class and returns an updated PRICING (will return the same pricing if  a suitable travel class isn't founded)
 (defn take-seats [pricing maxprice seats]
   (let [found-suitable-travel-class (atom false)
+        paid-price (atom nil)
         result
         (doall (map (fn [travel-class]
                       (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class))  (not @found-suitable-travel-class))
-                        (do (reset! found-suitable-travel-class true)
+                        (do (reset! paid-price (get-price travel-class))
+                            (reset! found-suitable-travel-class true)
                             [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)])
                         travel-class))
                     pricing))]
     ;(if (not (= pricing result))
       ;(log "(take-seats" pricing "\n" maxprice seats "\nresult: " result "\n"))
-    result))
+    [@paid-price result]))
 
 
 
@@ -104,20 +106,23 @@
 ;extra (redundant) safety mechanism: do this check again
 ;returns a boolean that indicates whether the booking succeeded
 (defn book [flight, customer]
-  (let [[oldFlightData newFlightData] (update-flight
+  (let [paid (atom nil)
+        [oldFlightData newFlightData] (update-flight
                                        flight
                                        (fn [flight-data]
-                                         (make-flight-data (flight-data :id)
-                                                           (flight-data :from)
-                                                           (flight-data :to)
-                                                           (flight-data :carrier)
-                                                           (take-seats (flight-data :pricing) (customer :budget) (customer :seats))))
+                                         (let [[paid-price updated-pricing]  (take-seats (flight-data :pricing) (customer :budget) (customer :seats))]
+                                           (reset! paid paid-price)
+                                           (make-flight-data (flight-data :id)
+                                                             (flight-data :from)
+                                                             (flight-data :to)
+                                                             (flight-data :carrier)
+                                                             updated-pricing)))
                                        reasonBooking)]
     ;(println (str "oldFlightData" oldFlightData))
     ;(println (str "newFlightData") newFlightData)
     (if (= oldFlightData newFlightData)
       {:result-booking false :customer customer}
-      {:result-booking true  :customer customer})))
+      {:result-booking true  :customer customer :paid-price @paid})))
 
 ;As a convenience, = also returns true when used to compare Java collections against each other, or against Clojure’s immutable collections, 
 ;if their contents are equal
@@ -188,11 +193,23 @@
       (reverse res)
       (recur (drop size ls) (cons (take size ls) res)))))
 
+;; https://clojuredocs.org/clojure.core/pmap
+;; pmap is implemented using Clojure futures. Futures run in threads. 
+;; These threads of a pmap's evaluation run independently from each other.
 
+;;pick the amount of elements that will be processed in one future sequentially
 (defn coarse-pmap [fun args granularity]
   (let [parts (split args granularity)]
     (doall
      (pmap (fn [part] (doall (map fun part))) parts))))
+
+
+;;pick the amount of threads
+(defn coarse-pmap-threads [fun args n-threads]
+  (let [granularity (quot (count args) n-threads)]
+    (coarse-pmap fun args granularity)))
+
+
 
 ;batches of customer, a singular batch will be processed sequently, different batches will be processed in parallel
 (defn process-customers [customers flights]
@@ -287,11 +304,11 @@
 
 (defn test-take-seats []
   (let [pricing [[300 5 10]
-                 [350  50 0]
+                 [350  10 0]
                  [370  20 0]
                  [380  30 0]]
-        maxprice 300
-        seats 10]
+        maxprice 375
+        seats 15]
     (println "TEST take-seats")
     (println (take-seats pricing maxprice seats))))
 
@@ -386,6 +403,7 @@
     (println "FLIGHTS AFTER PROCESSED CUSTOMERS: ")
     (print-flights flights)))
 
+;-----------------------------------------CORRECTNESS TESTS---------------------------------------------------
 
 (deftest test-no-overbooking
   (let [[flights,_] (initialize-flights
@@ -422,10 +440,22 @@
     (is (= 150 count-customers-success))))
 
 
+;(deftest sale
+;  (let [f1 (future (time (process-customers customers flightsForBooking)))
+;        f2 (future (sales-process flightsForSale carriers
+;                                  TIME_BETWEEN_SALES
+;                                  TIME_OF_SALES))]
+;        ; Wait until both have finished
+;    @f1
+;    @f2
+;    (await logger)))
+
+
 ;test customer can only book one flight
 ;proof
 
-
+;-----------------------------------------------PERFORMANCE EXPERIMENTS------------------------------------------
+(def)
 
 
 
