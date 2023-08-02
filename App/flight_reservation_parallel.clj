@@ -156,7 +156,9 @@
   (let [candidate-flights (flights [(customer :from) (customer :to)])
         ;filter is lazy so customer can maximally book one flight!, if filter wouldn't be lazy a customer could book multiple times 
         result-booking (first (filter (fn [flight] ((book flight customer) :result-booking)) candidate-flights))]
-    result-booking))
+    (if result-booking
+      {:result-booking true :customer customer}
+      {:result-booking false :customer customer})))
 
 ;unfortuantely this function doesnt work as expexted
 (defn find-and-book-flight-with-logs [flights customer]
@@ -195,8 +197,9 @@
   ;(doall (pmap
   ;        (fn [customer] (find-and-book-flight flights customer))
   ;        customers))
-  (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)
-  (reset! finished-processing? true))
+  (let [result-processing (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)]
+    (reset! finished-processing? true)
+    result-processing))
 
 
 (defn- update-pricing [flight factor]
@@ -330,7 +333,7 @@
                                :seats 5 :budget 600}]
     (println "FIND-FLIGHT-TEST")
     (println "result lucky customer: ")
-    (println @(find-and-book-flight flights customerFindFlight))
+    (println (find-and-book-flight flights customerFindFlight))
     (println)
     (println "result unlucky customer: ")
     (println (find-and-book-flight flights customerNoFindFlight))))
@@ -363,8 +366,8 @@
                                  [1000 50 0]
                                  [2000 50 0]]}])
         customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600})]  ;100 customers trying to book 5 seats at max 600 euro
-    ;only one customer should be able to do a booking 
-    (process-customers customers flights)
+    ;only one customer should be able to do a booking  
+    (run! (fn [b] (run! println b)) (process-customers customers flights))
     (println "FLIGHTS AFTER PROCESSED CUSTOMERS: ")
     (print-flights flights)))
 
@@ -379,10 +382,10 @@
 
 
 ;(flight-test)
-(book-test)
+;(book-test)
 ;(find-and-book-flight-test)
 ;(initialize-flights-test)
 ;(flights->str-test)
 
 ;(test-no-overbooking)
-(shutdown-agents)
+;(shutdown-agents)
