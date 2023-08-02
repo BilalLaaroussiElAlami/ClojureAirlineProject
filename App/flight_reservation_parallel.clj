@@ -2,7 +2,8 @@
   (:require [clojure.string]
             [clojure.pprint]
             [input-simple]
-            [input-random]))
+            [input-random])
+  (:use clojure.test))
 
 
 (def logger (agent nil))
@@ -87,7 +88,6 @@
 ;searches a suitable travel class and returns an updated PRICING (will return the same pricing if  a suitable travel class isn't founded)
 (defn take-seats [pricing maxprice seats]
   (let [result
-          ;might be unnecessary (map on a non-lazy list might not be lazy but idk) TODO find out 
         (map (fn [travel-class]
                (if (and (<= (get-price travel-class) maxprice) (<= seats (get-available-seats travel-class)))
                  [(get-price travel-class) (- (get-available-seats travel-class) seats) (+ (get-taken-seats travel-class) seats)]
@@ -115,7 +115,7 @@
     ;(println (str "newFlightData") newFlightData)
     (if (= oldFlightData newFlightData)
       {:result-booking false :customer customer}
-      {:result-booking true :customer customer})))
+      {:result-booking true  :customer customer})))
 
 ;As a convenience, = also returns true when used to compare Java collections against each other, or against Clojure’s immutable collections, 
 ;if their contents are equal
@@ -199,7 +199,7 @@
   ;        customers))
   (let [result-processing (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)]
     (reset! finished-processing? true)
-    result-processing))
+    (flatten result-processing)))
 
 
 (defn- update-pricing [flight factor]
@@ -367,12 +367,24 @@
                                  [2000 50 0]]}])
         customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600})]  ;100 customers trying to book 5 seats at max 600 euro
     ;only one customer should be able to do a booking  
-    (run! (fn [b] (run! println b)) (process-customers customers flights))
+    (run! println (process-customers customers flights))
     (println "FLIGHTS AFTER PROCESSED CUSTOMERS: ")
     (print-flights flights)))
 
 
-(defn test-sales-isolated [])
+(deftest test-no-overbooking
+  (let [[flights,_] (initialize-flights
+                     [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
+                       :pricing [[600 5 0]  ;there are only 5 seats at 600 euro
+                                 [1000 50 0]
+                                 [2000 50 0]]}])
+        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600}) ;100 customers trying to book 5 seats at max 600 euro
+        count-customers-success (count (filter  (fn [booking] (booking :result-booking)) (process-customers customers flights)))]
+     ;only one customer should be able to do a booking  
+    (is (= 1 count-customers-success))))
+
+
+
 
 ;test customer can only book one flight
 ;proof
@@ -387,5 +399,7 @@
 ;(initialize-flights-test)
 ;(flights->str-test)
 
-;(test-no-overbooking)
-;(shutdown-agents)
+
+;(run-tests 'flight-reservation-parallel)
+(test-no-overbooking)
+(shutdown-agents)
