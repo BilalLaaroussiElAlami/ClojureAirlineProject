@@ -58,7 +58,7 @@
 (defn update-flight [flight update-flight-data reason]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      (if  (and (= reason reasonBooking)  (some  (fn[carr](= carr (flight :carrier))) @carriers-undergoing-sale))
+      (if  (and (= reason reasonBooking)  (some  (fn [carr] (= carr (flight :carrier))) @carriers-undergoing-sale))
         ;this means the flights of the carrier are undergoing a sale, to get atomic/consistent results we recur
         (recur @flight)
         ;if the newdata is not valid (overbooking, negative price, ...) we dont update. extra safety mechanism because update-flight-data function should not return corrupted data in the first place
@@ -179,22 +179,24 @@
 (defn split [lst size]
   (loop [ls lst
          res '()]
-    (if (empty? ls) 
+    (if (empty? ls)
       (reverse res)
-      (recur (drop size ls)(cons (take size ls) res))))) 
+      (recur (drop size ls) (cons (take size ls) res)))))
+
 
 (defn coarse-pmap [fun args granularity]
   (let [parts (split args granularity)]
-    (doall 
+    (doall
      (pmap (fn [part] (doall (map fun part))) parts))))
 
+;batches of customer, a singular batch will be processed sequently, different batches will be processed in parallel
 (defn process-customers [customers flights]
   ;(doall (pmap
   ;        (fn [customer] (find-and-book-flight flights customer))
   ;        customers))
   (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)
   (reset! finished-processing? true))
-  
+
 
 (defn- update-pricing [flight factor]
   "Updated pricing of `flight` with `factor`."
@@ -256,10 +258,10 @@
     (println "Time between sales:" TIME_BETWEEN_SALES)
     (println "Time of sales:" TIME_OF_SALES)
 
-  
+
     ; Start two threads: one for processing customers, one for sales.
     ; Print the time to execute the first thread.
-     (let [f1 (future (time (process-customers customers flightsForBooking)))
+    (let [f1 (future (time (process-customers customers flightsForBooking)))
           f2 (future (sales-process flightsForSale carriers
                                     TIME_BETWEEN_SALES
                                     TIME_OF_SALES))]
@@ -272,8 +274,8 @@
     (print-flights flightsForBooking)))
 
 
-(apply main *command-line-args*)
-(shutdown-agents)
+;(apply main *command-line-args*)
+;(shutdown-agents)
 
 ;--------------------------------------TESTS----------------------------------------
 (defn flight-test []
@@ -288,6 +290,7 @@
     (println "F after illegal update")
     (print-flight-data @F)))
 
+;tests the booking of a flight for a customer that should be able to book a flight, and customers that shouldn't be able tto book a flight
 (defn book-test []
   (let [F (make-flight 0, "BRU", "ATL", "Delta", [[600 150 0] [650 50 0] [700 50 0]])
         validcustomer  {:id  1 :from "BRU" :to "ATL" :seats 5 :budget 600}
@@ -315,7 +318,7 @@
                                           :pricing [[600 150 0]
                                                     [650 50 0]
                                                     [700 50 0]]})
-                                   (atom {:id 0 :from "BRU" :to "ATL"
+                                   (atom {:id 1 :from "BRU" :to "ATL"
                                           :carrier "Delta"
                                           :pricing [[600 150 0]
                                                     [650 50 0]
@@ -350,6 +353,20 @@
   "zet test-process-customers? variable handmatig op true")
 
 
+;;test that no overbookings are possible
+(defn test-no-overbooking []
+  (println "TEST NO OVERBOOKINGS")
+  (let [[flights,_] (initialize-flights
+                     [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
+                       :pricing [[600 5 0]  ;there are only 5 seats at 600 euro
+                                 [1000 50 0]
+                                 [2000 50 0]]}])
+        customers  (for [id (range 100)] {:id id :from "BRU" :to "ATL" :seats  5 :budget 600})]  ;100 customer trying to book 5 seats at max 600 euro
+    ;only one customer should be able to do a booking 
+    (process-customers customers flights)
+    (println "FLIGHTS AFTER PROCESSED CUSTOMERS: ")
+    (print-flights flights)))
+
 
 
 
@@ -359,3 +376,6 @@
 ;(find-and-book-flight-test)
 ;(initialize-flights-test)
 ;(flights->str-test)
+
+(test-no-overbooking)
+(shutdown-agents)
