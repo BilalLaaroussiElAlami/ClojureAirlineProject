@@ -2,7 +2,9 @@
   (:require [clojure.string]
             [clojure.pprint]
             [input-simple]
-            [input-random])
+            [input-random]
+            [input-experiment]
+            )
   (:use clojure.test))
 
 
@@ -159,13 +161,25 @@
                     (print-flight-data @fat))))))
 
 
+;(defn find-and-book-flight [flights customer]
+;  (let [candidate-flights (flights [(customer :from) (customer :to)])
+;        ;filter is lazy so customer can maximally book one flight!, if filter wouldn't be lazy a customer could book multiple times 
+;        result-booking (first (filter (fn [flight] ((book flight customer) :result-booking)) candidate-flights))] ;get first booking where result-booking is true, nil if none 
+;    (if result-booking
+;      {:result-booking true :customer customer }
+;      {:result-booking false :customer customer})))
+
 (defn find-and-book-flight [flights customer]
-  (let [candidate-flights (flights [(customer :from) (customer :to)])
-        ;filter is lazy so customer can maximally book one flight!, if filter wouldn't be lazy a customer could book multiple times 
-        result-booking (first (filter (fn [flight] ((book flight customer) :result-booking)) candidate-flights))]
-    (if result-booking
-      {:result-booking true :customer customer}
-      {:result-booking false :customer customer})))
+   (let [candidate-flights (flights [(customer :from) (customer :to)])]
+    (loop [flights candidate-flights]
+      (if (empty? flights)
+        {:result-booking false :customer customer}
+        (let [first (first flights)
+              booking (book first customer)]
+          (if (booking :result-booking)
+            booking
+            (recur (rest flights))))))))
+
 
 ;unfortuantely this function doesnt work as expexted
 (defn find-and-book-flight-with-logs [flights customer]
@@ -198,16 +212,21 @@
 ;; These threads of a pmap's evaluation run independently from each other.
 
 ;;pick the amount of elements that will be processed in one future sequentially
-(defn coarse-pmap [fun args granularity]
-  (let [parts (split args granularity)]
-    (doall
-     (pmap (fn [part] (doall (map fun part))) parts))))
+;(defn coarse-pmap [fun args granularity]
+;  (let [parts (split args granularity)]
+;    (doall
+;     (pmap (fn [part] (doall (map fun part))) parts))))
 
 
+(def number-threads (atom 4))
 ;;pick the amount of threads
-(defn coarse-pmap-threads [fun args n-threads]
-  (let [granularity (quot (count args) n-threads)]
-    (coarse-pmap fun args granularity)))
+(def testing-sale-consistency? (atom false))
+
+
+(defn coarse-pmap-threads [fun args]
+  (let [size (quot (count args) @number-threads) ;;size of list that will be in one future
+        parts (split args size)]
+    (doall (pmap (fn [part] (doall (map fun part))) parts))))
 
 
 
@@ -216,7 +235,7 @@
   ;(doall (pmap
   ;        (fn [customer] (find-and-book-flight flights customer))
   ;        customers))
-  (let [result-processing (coarse-pmap (fn [customer] (find-and-book-flight flights customer)) customers 20)]
+  (let [result-processing (coarse-pmap-threads (fn [customer] (find-and-book-flight flights customer)) customers)]
     (reset! finished-processing? true)
     (flatten result-processing)))
 
@@ -225,10 +244,13 @@
   "Updated pricing of `flight` with `factor`."
   (update-flight flight #(map (fn [[p a t]] [(* p factor) a t]) %) reasonSale))
 
+;;when testing sale consistency we want to disprove that succesfull bookings and discounting of flights of the same carrier can be interleaved, 
+;;to prove this we have to leave a chance to interleave them. The sleep statement prevents that the discount happens 
+;;so quick that there is no chance for interleaving, and that the test would succeed by chance
 (defn sale [flights carrier factor]
   (reset! carriers-undergoing-sale  (cons carrier @carriers-undergoing-sale))
   (let [flights-carrier (flights :carrier)]
-    (coarse-pmap (fn [fl] (update-pricing fl factor)) flights-carrier 100))
+    (coarse-pmap-threads (fn [fl] (when @testing-sale-consistency? (Thread/sleep (rand-int 20))) (update-pricing fl factor)) flights-carrier))
   (reset! carriers-undergoing-sale  (filter (fn [c] (not (= c carrier))) @carriers-undergoing-sale)))
 
 (defn start-sale  [flights carrier]
@@ -297,7 +319,7 @@
     (print-flights flightsForBooking)))
 
 
-(apply main *command-line-args*)
+;(apply main *command-line-args*)
 
 
 ;--------------------------------------TESTS----------------------------------------
@@ -417,7 +439,7 @@
     (is (= 2 count-customers-success))))
 
 
-(deftest test-bookings
+(deftest test-booking
   (let [[flights,_] (initialize-flights
                      [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
                        :pricing [[500 50 0]
@@ -428,8 +450,8 @@
     ;all the customers should be able to book
     (is (= 150 count-customers-success))))
 
-(deftest test-bookings-2
-  (let [[flights,_] (initialize-flights
+(deftest test-no-overbooking-2
+  (let [[flights _] (initialize-flights
                      [{:id 0 :from "BRU" :to "ATL" :carrier "Delta"
                        :pricing [[500 50 0]
                                  [1000 50 0]
@@ -439,29 +461,66 @@
     ;only half the customers should be able to book
     (is (= 150 count-customers-success))))
 
-
-;(deftest sale
-;  (let [f1 (future (time (process-customers customers flightsForBooking)))
-;        f2 (future (sales-process flightsForSale carriers
-;                                  TIME_BETWEEN_SALES
-;                                  TIME_OF_SALES))]
-;        ; Wait until both have finished
-;    @f1
-;    @f2
-;    (await logger)))
+;;tests that it's not possible that customer A sees a discounted flight and customer B sees an undiscounted flight
+(deftest test-sale-consistency
+  (reset! testing-sale-consistency? true)
+  (let [ ;1000 customers want to book one seat for max 200 euro
+        customers (for [id (range 1000)] {:id id :from "BRU" :to "ATL" :seats  1 :budget 200}) 
+        ;1000 seats at 200
+        [flightsForBooking flightsForSale]  (initialize-flights (for [id (range 20)] {:id id :from "BRU" :to "ATL" :carrier "DELTA" :pricing [[200 1000 0]]}))   
+        f2 (future (start-sale flightsForSale "DELTA"))
+        resultsBookings (future (process-customers customers flightsForBooking))]
+    @f2 ;wait for sale to finish
+    ;;check all customers paid the same price
+    (is (apply = (map (fn [bkng] (bkng :paid-price)) @resultsBookings)))
+    ;;check that the sale effectively did take place
+    ;(is  (apply = (map (fn[flight-data] (get-price (first (flight-data :pricing)))) (doall (map @ (vals flightsForBooking))))))
+    ;(let [x (vals flightsForBooking)
+    ;      y (println "gra" (first x))
+    ;      z (first (first x))
+    ;      b (print "oooh" z)
+    ;      list-of-flight-data-objects (vals flightsForBooking)
+    ;      list-of-flight-data  (doall(map @ list-of-flight-data-objects))
+    ;      pricings (map :pricing list-of-flight-data)
+    ;      travel-classes (map first pricings)
+    ;      prices (map get-price travel-classes)]
+    ;  (is (apply = prices)))
+    (println "test-sale-consistency, paid price" ((first @resultsBookings) :paid-price))
+    ;(doall (map println @resultsBookings))
+    )
+  (reset! testing-sale-consistency? false))
+  
 
 
 ;test customer can only book one flight
 ;proof
 
 ;-----------------------------------------------PERFORMANCE EXPERIMENTS------------------------------------------
-(def)
+
+
+(defn experiment-speedup-threads [& args]
+  (reset! number-threads (first args))
+  (let [[flightsForBooking flightsForSale] (initialize-flights input-experiment/flights)
+        f1 (future (time (process-customers input-experiment/customers flightsForBooking)))
+        f2 (future (sales-process flightsForSale input-experiment/carriers
+                                    input-experiment/TIME_BETWEEN_SALES
+                                    input-experiment/TIME_OF_SALES))]
+    ; Wait until both have finished
+    @f1
+    @f2
+    (await logger)))
+
+
+
+
+
+
 
 
 
 ;(flight-test)
 ;(book-test)
-;(find-and-book-flight-test)
+(find-and-book-flight-test)
 ;(initialize-flights-test)
 ;(flights->str-test)
 
