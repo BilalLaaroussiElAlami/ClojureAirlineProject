@@ -99,15 +99,15 @@
 
 
 
-(def flights 
-  (for [id (range 10000)] ;10 000 flights
+(defn flights[n] 
+  (for [id (range n)] 
     (let [from (rand-nth airport-codes)
           to   (rand-nth airport-codes)
           carrier (rand-nth carriers )]
       {:id id :from from :to to :carrier carrier :pricing [[100 150 0] [150  50 0][200  50 0][300  50 0]]})))
      
-(def customers
-  (for [id (range 1000000)] ;1000 000 customers
+(defn customers[n]
+  (for [id (range n)] ;10 000 000 customers
     (let [from (rand-nth airport-codes)
           to   (rand-nth airport-codes)]
       {:id     id
@@ -116,8 +116,8 @@
        :seats  (+ (rand-int 4) 1)        ; 1-4
        :budget (+ (rand-int 600) 200)}))) ; 200-799
 
-(def TIME_BETWEEN_SALES 50) ; milliseconds
-(def TIME_OF_SALES 10)
+;(def TIME_BETWEEN_SALES 50) ; milliseconds
+;(def TIME_OF_SALES 10)
 
 ;(println "flights")
 ;(println (take 10 flights))

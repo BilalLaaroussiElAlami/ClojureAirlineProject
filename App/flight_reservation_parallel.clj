@@ -60,7 +60,7 @@
 (defn update-flight [flight update-flight-data reason]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      (if  (and (= reason reasonBooking)(some  (fn [carr] (= carr (@flight :carrier)))@carriers-undergoing-sale))
+      (if  (and (= reason reasonBooking)(some  (fn [carr] (= carr (@flight :carrier))) @carriers-undergoing-sale))
         ;this means the flights of the carrier are undergoing a sale, to get atomic/consistent results we recur
         (recur @flight)
         ;if the newdata is not valid (overbooking, negative price, ...) we dont update. extra safety mechanism because update-flight-data function should not return corrupted data in the first place
@@ -473,21 +473,18 @@
     @f2 ;wait for sale to finish
     ;;check all customers paid the same price
     (is (apply = (map (fn [bkng] (bkng :paid-price)) @resultsBookings)))
+    (println "test-sale-consistency, paid price" ((first @resultsBookings) :paid-price))
     ;;check that the sale effectively did take place
-    ;(is  (apply = (map (fn[flight-data] (get-price (first (flight-data :pricing)))) (doall (map @ (vals flightsForBooking))))))
-    ;(let [x (vals flightsForBooking)
-    ;      y (println "gra" (first x))
-    ;      z (first (first x))
-    ;      b (print "oooh" z)
-    ;      list-of-flight-data-objects (vals flightsForBooking)
-    ;      list-of-flight-data  (doall(map @ list-of-flight-data-objects))
+   ; (is  (apply = (map (fn[flight-data] (get-price (first (flight-data :pricing)))) (doall (map @ (vals flightsForBooking))))))
+    ;(let [listof-flight-atoms (vals flightsForBooking)
+    ;      list-of-flight-data  (doall (map @ listof-flight-atoms))
     ;      pricings (map :pricing list-of-flight-data)
     ;      travel-classes (map first pricings)
     ;      prices (map get-price travel-classes)]
-    ;  (is (apply = prices)))
-    (println "test-sale-consistency, paid price" ((first @resultsBookings) :paid-price))
+    ;  (is (apply = prices))
+    ;  (is (= (first prices) (* 200 0.8)))))
     ;(doall (map println @resultsBookings))
-    )
+  )
   (reset! testing-sale-consistency? false))
   
 ;test one customer can only book one flight
@@ -495,28 +492,66 @@
 
 ;-----------------------------------------------PERFORMANCE EXPERIMENTS------------------------------------------
 
-
-(defn experiment-speedup-threads []
-  (reset! number-threads 8)
-  (let [a (println "aaaaaa")
-        [flightsForBooking flightsForSale] (initialize-flights input-experiment/flights)
-        a (println "xxxxxxxxx")
-        f1 (future (time (process-customers input-experiment/customers flightsForBooking)))
-        b (println "ccccccccc")
-        f2 (future (sales-process flightsForSale input-experiment/carriers
-                                  input-experiment/TIME_BETWEEN_SALES
-                                  input-experiment/TIME_OF_SALES))
-        c (println "zzzzzzzzzz")]
-    ; Wait until both have finished
+(defn run-process-once [flightsForBooking flightsForSale customers time-between-sales time-of-sales]
+  (let [f1 (future (time (process-customers customers flightsForBooking)))
+        f2 (future (sales-process flightsForSale input-experiment/carriers time-between-sales time-of-sales ))]
     @f1
-    @f2
-    (await logger)
-    ))
+    @f2))
 
-(experiment-speedup-threads)
+(defn experiment-speedup-threads [N-threads]
+  (reset! number-threads N-threads)
+  ;experimental setup
+  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights 10000))
+        customers (input-experiment/customers 100000)
+        time-between-sales 2000
+        time-of-sales 50]
+    (let [times-run 30]
+      (println "running experiment " times-run "times, on " @number-threads "threads")
+      (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
+    )))
+
+;run one by one uncomment one line a time
+;(experiment-speedup-threads 8)
+;(experiment-speedup-threads 7)
+;(experiment-speedup-threads 6)
+;(experiment-speedup-threads 5)
+;(experiment-speedup-threads 4)
+;(experiment-speedup-threads 3)
+;(experiment-speedup-threads 2)
+;(experiment-speedup-threads 1)
+
+(defn experiment-speedup-customers [n-customers]
+  (reset! number-threads 8)
+  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights 10000))
+        customers (input-experiment/customers n-customers)
+        time-between-sales 2000
+        time-of-sales 50]
+    (let [times-run 30]
+      (println "running experiment with " n-customers " customers")
+      (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
+    )))
+
+;;run one by one uncomment one line a time
+;(experiment-speedup-customers 10000)
+;(experiment-speedup-customers 50000)
+;(experiment-speedup-customers 100000)
+;(experiment-speedup-customers 150000)
+;(experiment-speedup-customers 200000)
+;(experiment-speedup-customers 250000)
+;(experiment-speedup-customers 300000)
+;(experiment-speedup-customers 350000)
 
 
-
+(defn experiment-speedup-flights [n-flights]
+  (reset! number-threads 8)
+  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights n-flights))
+        customers (input-experiment/customers 10000)
+        time-between-sales 2000
+        time-of-sales 50]
+    (let [times-run 30]
+      (println "running experiment with " n-customers " customers")
+      (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
+    )))
 
 
 
@@ -525,7 +560,7 @@
 
 ;(flight-test)
 ;(book-test)
-(find-and-book-flight-test)
+;(find-and-book-flight-test)
 ;(initialize-flights-test)
 ;(flights->str-test)
 
