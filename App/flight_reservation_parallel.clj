@@ -60,7 +60,7 @@
 (defn update-flight [flight update-flight-data reason]
   (loop [oldFlightData @flight]
     (let [newFlightData (update-flight-data oldFlightData)]
-      (if  (and (= reason reasonBooking)  (some  (fn [carr] (= carr (flight :carrier))) @carriers-undergoing-sale))
+      (if  (and (= reason reasonBooking)(some  (fn [carr] (= carr (@flight :carrier)))@carriers-undergoing-sale))
         ;this means the flights of the carrier are undergoing a sale, to get atomic/consistent results we recur
         (recur @flight)
         ;if the newdata is not valid (overbooking, negative price, ...) we dont update. extra safety mechanism because update-flight-data function should not return corrupted data in the first place
@@ -334,7 +334,7 @@
     (println "TEST take-seats")
     (println (take-seats pricing maxprice seats))))
 
-(test-take-seats)
+;(test-take-seats)
 
 (defn flight-test []
   (println "testing singular flight")
@@ -490,25 +490,30 @@
     )
   (reset! testing-sale-consistency? false))
   
-
-
-;test customer can only book one flight
+;test one customer can only book one flight
 ;proof
 
 ;-----------------------------------------------PERFORMANCE EXPERIMENTS------------------------------------------
 
 
-(defn experiment-speedup-threads [& args]
-  (reset! number-threads (first args))
-  (let [[flightsForBooking flightsForSale] (initialize-flights input-experiment/flights)
+(defn experiment-speedup-threads []
+  (reset! number-threads 8)
+  (let [a (println "aaaaaa")
+        [flightsForBooking flightsForSale] (initialize-flights input-experiment/flights)
+        a (println "xxxxxxxxx")
         f1 (future (time (process-customers input-experiment/customers flightsForBooking)))
+        b (println "ccccccccc")
         f2 (future (sales-process flightsForSale input-experiment/carriers
-                                    input-experiment/TIME_BETWEEN_SALES
-                                    input-experiment/TIME_OF_SALES))]
+                                  input-experiment/TIME_BETWEEN_SALES
+                                  input-experiment/TIME_OF_SALES))
+        c (println "zzzzzzzzzz")]
     ; Wait until both have finished
     @f1
     @f2
-    (await logger)))
+    (await logger)
+    ))
+
+(experiment-speedup-threads)
 
 
 

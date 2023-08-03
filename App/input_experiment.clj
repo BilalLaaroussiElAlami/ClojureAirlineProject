@@ -118,3 +118,8 @@
 
 (def TIME_BETWEEN_SALES 50) ; milliseconds
 (def TIME_OF_SALES 10)
+
+;(println "flights")
+;(println (take 10 flights))
+;(println "customers")
+;(println (take 10 customers))
