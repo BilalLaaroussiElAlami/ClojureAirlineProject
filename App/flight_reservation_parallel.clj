@@ -501,19 +501,25 @@
 (defn experiment-speedup-threads [N-threads]
   (reset! number-threads N-threads)
   ;experimental setup
-  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights 10000))
-        customers (input-experiment/customers 100000)
+  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights 200000 )) ;200000  ;5000000
+        customers (input-experiment/customers 100000 ) ;100 000  ;1000000
         time-between-sales 2000
         time-of-sales 50]
-    (let [times-run 30]
+    (let [times-run 15]
       (println "running experiment " times-run "times, on " @number-threads "threads")
       (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
     )))
 
+(defn experiment [& args]
+  (let [experimentName (first args)
+        n  (Integer/parseInt(first (rest args)))]
+    (if (= experimentName "experiment-speedup-threads")
+      (experiment-speedup-threads n))))
+
 ;run one by one uncomment one line a time
 ;(experiment-speedup-threads 8)
 ;(experiment-speedup-threads 7)
-;(experiment-speedup-threads 6)
+(experiment-speedup-threads 6)
 ;(experiment-speedup-threads 5)
 ;(experiment-speedup-threads 4)
 ;(experiment-speedup-threads 3)
@@ -542,16 +548,16 @@
 ;(experiment-speedup-customers 350000)
 
 
-(defn experiment-speedup-flights [n-flights]
-  (reset! number-threads 8)
-  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights n-flights))
-        customers (input-experiment/customers 10000)
-        time-between-sales 2000
-        time-of-sales 50]
-    (let [times-run 30]
-      (println "running experiment with " n-customers " customers")
-      (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
-    )))
+;(defn experiment-speedup-flights [n-flights]
+;  (reset! number-threads 8)
+;  (let [[flightsForBooking flightsForSale] (initialize-flights (input-experiment/flights n-flights))
+;        customers (input-experiment/customers 10000)
+;        time-between-sales 2000
+;        time-of-sales 50]
+;    (let [times-run 30]
+;      (println "running experiment with " n-customers " customers")
+;     (doall (repeatedly times-run (fn [] (run-process-once flightsForBooking flightsForSale customers time-between-sales time-of-sales))))
+;   )))
 
 
 

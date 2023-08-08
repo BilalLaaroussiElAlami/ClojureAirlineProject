@@ -114,7 +114,7 @@
        :from   from
        :to     to
        :seats  (+ (rand-int 4) 1)        ; 1-4
-       :budget (+ (rand-int 600) 200)}))) ; 200-799
+       :budget (+ (rand-int 600) 95)}))) ; 200-799
 
 ;(def TIME_BETWEEN_SALES 50) ; milliseconds
 ;(def TIME_OF_SALES 10)

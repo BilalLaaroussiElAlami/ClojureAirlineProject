@@ -5,11 +5,9 @@
 # set -o pipefail makes the script exit if any command in a pipeline fails
 set -euo pipefail
 
-for i in {1..30}
+for i in {1..8}
 do
     echo "---"
-    echo "> simple, iteration $i"
-    ./clj flight_reservation.clj simple > "benchmarks/result-simple-$i.txt"
-    echo "> random, iteration $i"
-    ./clj flight_reservation.clj random > "benchmarks/result-random-$i.txt"
+    echo ">threads: $i"
+    ./clj flight_reservation_parallel.clj experiment-speedup-threads $i > "benchmarks/result-speedupthread -$i.txt"
 done

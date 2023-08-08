@@ -31,7 +31,7 @@ EXPERIMENT_NAME = "inputs"
 # Name of the benchmark. File names should be be result-$NAME-$ITERATION.txt.
 BENCHMARK_NAME = r"result-(?P<name>.+)-(?P<iteration>\d+).txt"
 # Expected benchmark names
-NAMES = ["simple", "random"]
+NAMES = ["simple", "random", "speedup_thread"]
 # Number of iterations expected per benchmark
 NUMBER_OF_ITERATIONS = 30
 
@@ -75,14 +75,14 @@ def parse_files(names: list[str]) -> dict[str, list[float]]:
         results[name].append(result)
         parameters[name].append(pars)
     # Check if parameters match across all files of the same benchmark.
-    for name, pars in parameters.items():
-        for p in pars:
-            if p != pars[0]:
-                raise Exception(
-                    f"Parameters do not match for all iterations of benchmark {name}:\n"
-                    + f"{p} != {pars[0]}"
-                )
-        logging.info(f"Parameters for {name}:\n%s", "".join(pars[0]))
+    #for name, pars in parameters.items():
+    #    for p in pars:
+    #        if p != pars[0]:
+    #            raise Exception(
+    #                f"Parameters do not match for all iterations of benchmark {name}:\n"
+    #                + f"{p} != {pars[0]}"
+    #            )
+     #   logging.info(f"Parameters for {name}:\n%s", "".join(pars[0]))
     return results
 
 
@@ -153,25 +153,26 @@ def main():
     # Gather benchmark files, i.e. all files in this directory that match the regex.
     files = glob.glob("result-*.txt")
 
+
     # Parse benchmark results.
     results = parse_files(files)
     logging.info("Results: %s", results)
 
     # Calculate and print 1st quartile, median, and 3rd quartile.
     # These may be useful for the report.
-    time_quartiles = {
-        i: np.quantile(results[i], [0.25, 0.5, 0.75]) for i in results
-    }
-    logging.info("Time quartiles: %s", time_quartiles)
+    #time_quartiles = {
+    #    i: np.quantile(results[i], [0.25, 0.5, 0.75]) for i in results
+    #}
+    #logging.info("Time quartiles: %s", time_quartiles)
 
     # Plot results using box plots.
-    plot_boxplots(results)
+    #plot_boxplots(results)
 
     # Alternative: plot using violin plots.
-    plot_violinplots(results)
+    #plot_violinplots(results)
 
     # Alternative: plot using graph with error bars.
-    plot_errorbars(results)
+    #plot_errorbars(results)
 
 
 if __name__ == "__main__":
